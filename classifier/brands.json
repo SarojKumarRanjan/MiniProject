@@ -1,0 +1,106 @@
+{
+  "amul": {
+    "name": "Amul",
+    "aliases": ["Amul", "AMUL", "Amu1", "Amui"]
+  },
+  "britannia": {
+    "name": "Britannia",
+    "aliases": ["Britannia", "Britania", "Brittania"]
+  },
+  "colgate": {
+    "name": "Colgate",
+    "aliases": ["Colgate", "Colgote", "Colgale", "Colqate"]
+  },
+  "parle": {
+    "name": "Parle",
+    "aliases": ["Parle", "Parle-G", "Parle G", "Parie G", "Par1e"]
+  },
+  "mdh": {
+    "name": "MDH",
+    "aliases": ["MDH", "M0H", "MD4"]
+  },
+  "dabur": {
+    "name": "Dabur",
+    "aliases": ["Dabur", "Dabor", "Daburr"]
+  },
+  "patanjali": {
+    "name": "Patanjali",
+    "aliases": ["Patanjali", "Pataniali", "Patanajli", "Patanjall"]
+  },
+  "tata_salt": {
+    "name": "Tata Salt",
+    "aliases": ["Tata", "Tata Salt", "Tota Salt", "Tota"]
+  },
+  "fortune": {
+    "name": "Fortune",
+    "aliases": ["Fortune", "Fortun", "Fortue"]
+  },
+  "everest": {
+    "name": "Everest Spices",
+    "aliases": ["Everest", "EVEREST", "Euerest"]
+  },
+  "surf_excel": {
+    "name": "Surf Excel",
+    "aliases": ["Surf Excel", "SurfExel", "Surfexel", "Surf"]
+  },
+  "dettol": {
+    "name": "Dettol",
+    "aliases": ["Dettol", "Detol", "Dattol"]
+  },
+  "vim": {
+    "name": "Vim",
+    "aliases": ["Vim", "Vlm", "Vim Dishwash"]
+  },
+  "sensodyne": {
+    "name": "Sensodyne",
+    "aliases": ["Sensodyne", "Sensodym", "Sensodyen"]
+  },
+  "himalaya": {
+    "name": "Himalaya",
+    "aliases": ["Himalaya", "Himalya", "Himlaya"]
+  },
+  "pepsodent": {
+    "name": "Pepsodent",
+    "aliases": ["Pepsodent", "Pepsoden", "Pepsodant"]
+  },
+  "lays": {
+    "name": "Lays",
+    "aliases": ["Lays", "Lay's", "Layz"]
+  },
+  "maggi": {
+    "name": "Maggi",
+    "aliases": ["Maggi", "Maggy", "Maggie"]
+  },
+  "oreo": {
+    "name": "Oreo",
+    "aliases": ["Oreo", "OREO", "Orio"]
+  },
+  "tropicana": {
+    "name": "Tropicana",
+    "aliases": ["Tropicana", "Tropica", "Tropicana Juice"]
+  },
+  "cocacola": {
+    "name": "Coca-Cola",
+    "aliases": ["Coca Cola", "Coca-Cola", "CocaCola", "Coke", "Coca Gola", "Goca Cola"]
+  },
+  "godrej": {
+    "name": "Godrej",
+    "aliases": ["Godrej", "Godre1", "6odrej", "Godreg", "Goorei", "Goodrej", "Godre}", "Godrei", "Godrej's", "godrej", "Goorq", "Goore}", "Goore", "Kerge", "No", "No1", "No.1"]
+  },
+  "bingo": {
+    "name": "Bingo",
+    "aliases": ["Bingo", "Bingo Mad Angles", "BINGO"]
+  },
+  "haldiram": {
+    "name": "Haldiram's",
+    "aliases": ["Haldiram", "Haldiram's", "Haldirams"]
+  },
+  "maaza": {
+    "name": "Maaza",
+    "aliases": ["Maaza", "Mazza", "MAAZA"]
+  },
+  "pepsi": {
+    "name": "Pepsi",
+    "aliases": ["Pepsi", "PepsiCo", "PEPSI", "Peps1"]
+  }
+}

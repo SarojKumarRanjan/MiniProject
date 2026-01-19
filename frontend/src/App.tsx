@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Upload, Camera, Check, X, Smartphone } from 'lucide-react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
-import UploadArea from './components/UploadArea';
 import FeatureSelector from './components/FeatureSelector';
 import ResultCard from './components/ResultCard';
 import CameraModal from './components/CameraModal';
@@ -10,10 +10,11 @@ import LoginModal from './components/LoginModal';
 import EditProfileModal from './components/EditProfileModal';
 import Dashboard from './components/Dashboard';
 import LiveDetectionModal from './components/LiveDetectionModal';
+import IPWebcamUrlInput from './components/IPWebcamUrlInput';
 import Toast from './components/Toast';
 import type { ToastMessage } from './components/Toast';
 import { getCurrentUser, logout as apiLogout, analyzeImage, getHistory, deleteHistoryItem } from './utils/api';
-import type { NavigationPage, ServiceType, InputMethod, AnalysisResponse, User, HistoryItem } from './types';
+import type { NavigationPage, ServiceType, InputMethod, AnalysisResponse, AnalysisResults, AnalysisStatus, User, HistoryItem } from './types';
 
 function App() {
   // Application state
@@ -27,6 +28,12 @@ function App() {
   const [analysisResults, setAnalysisResults] = useState<AnalysisResponse | null>(null);
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [showLiveDetectionModal, setShowLiveDetectionModal] = useState(false);
+  const [useIPWebcamForCamera, setUseIPWebcamForCamera] = useState(false);
+  const [useIPWebcamForLiveDetection, setUseIPWebcamForLiveDetection] = useState(false);
+  const [ipWebcamUrl, setIpWebcamUrl] = useState(() => {
+    const saved = localStorage.getItem('ipWebcamUrl');
+    return saved || '';
+  });
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
@@ -53,6 +60,12 @@ function App() {
   const showToast = (type: 'success' | 'error' | 'info', message: string, duration?: number) => {
     const id = Date.now().toString();
     setToasts(prev => [...prev, { id, type, message, duration }]);
+  };
+
+  // Save IP Webcam URL to localStorage
+  const handleSaveIpWebcamUrl = () => {
+    localStorage.setItem('ipWebcamUrl', ipWebcamUrl);
+    showToast('success', 'IP Webcam URL saved successfully!');
   };
 
   // Handle dark mode toggle
@@ -156,9 +169,9 @@ function App() {
   };
 
   const handleOpenCamera = () => {
-    if (inputMethod === 'LiveDetection') {
-      setShowLiveDetectionModal(true);
-    } else {
+    // For Live Detection, we don't open a modal anymore - it's embedded in the page
+    // Only open modal for Camera capture
+    if (inputMethod === 'Camera') {
       setShowCameraModal(true);
     }
   };
@@ -201,7 +214,27 @@ function App() {
       );
       
       setAnalysisResults(response);
-      showToast('success', 'Analysis completed successfully!');
+      
+      // Check results and show appropriate toast messages
+      const failedServices: string[] = [];
+      const successfulServices: string[] = [];
+      
+      selectedServices.forEach(service => {
+        const status = getServiceStatus(service, response.results);
+        if (status === 'Failed') {
+          failedServices.push(service);
+        } else {
+          successfulServices.push(service);
+        }
+      });
+      
+      if (failedServices.length === selectedServices.length) {
+        showToast('error', 'Analysis completed but no results were found for any service');
+      } else if (failedServices.length > 0) {
+        showToast('info', `Analysis completed with mixed results. ${failedServices.length} service(s) found no data.`);
+      } else {
+        showToast('success', 'Analysis completed successfully!');
+      }
       
       // Reload history after successful analysis (results are already saved by backend)
       loadUserHistory();
@@ -265,6 +298,38 @@ function App() {
     setShowDetailsModal(true);
   };
 
+  // Function to determine status based on analysis results
+  const getServiceStatus = (service: ServiceType, results: AnalysisResults): AnalysisStatus => {
+    switch (service) {
+      case 'OCR':
+        if (!results.ocr || !results.ocr.text || results.ocr.text.trim() === '') {
+          return 'Failed';
+        }
+        return 'Success';
+      
+      case 'ProductCount':
+        if (!results.productCount || results.productCount.total === 0) {
+          return 'Failed';
+        }
+        return 'Success';
+      
+      case 'Freshness':
+        if (!results.freshness || !results.freshness.label || !results.freshness.score) {
+          return 'Failed';
+        }
+        return 'Success';
+      
+      case 'BrandRecognition':
+        if (!results.brand || !results.brand.matches || results.brand.matches.length === 0) {
+          return 'Failed';
+        }
+        return 'Success';
+      
+      default:
+        return 'Failed';
+    }
+  };
+
   const handleResultAction = (service: ServiceType, action: string) => {
     switch (action) {
       case 'copy':
@@ -284,6 +349,51 @@ function App() {
         link.download = `analysis-${service}-${Date.now()}.json`;
         link.click();
         URL.revokeObjectURL(url);
+        break;
+      case 'details':
+        // Show detailed analysis information
+        const serviceData = analysisResults?.results[service.toLowerCase() as keyof AnalysisResults];
+        if (serviceData) {
+          let detailsText = '';
+          
+          switch (service) {
+            case 'OCR':
+              const ocrData = serviceData as any;
+              detailsText = `OCR Analysis Details:\n\nExtracted Text: "${ocrData.text || 'No text found'}"\nText Boxes Detected: ${ocrData.boxes?.length || 0}\nProcessing Method: Multi-method OCR with preprocessing`;
+              break;
+            case 'ProductCount':
+              const countData = serviceData as any;
+              detailsText = `Product Count Details:\n\nTotal Objects: ${countData.total || 0}\nDetections: ${countData.detections?.length || 0}\nDetection Method: OpenCV with adaptive thresholding\nConfidence Filtering: Applied`;
+              break;
+            case 'Freshness':
+              const freshnessData = serviceData as any;
+              detailsText = `Freshness Analysis Details:\n\nFreshness Score: ${freshnessData.score || 'N/A'}\nClassification: ${freshnessData.label || 'Unknown'}\nModel: TensorFlow CNN (224x224)\nAnalysis Regions: ${freshnessData.regions?.length || 0}`;
+              break;
+            case 'BrandRecognition':
+              const brandData = serviceData as any;
+              const matches = brandData.matches || [];
+              detailsText = `Brand Recognition Details:\n\nBrands Detected: ${matches.length}\nDetection Method: Hybrid OCR + CLIP AI\nSupported Brands: 26 major brands\n\nMatches:\n${matches.map((m: any, i: number) => `${i+1}. ${m.brand} (${Math.round(m.confidence * 100)}% confidence)`).join('\n') || 'No brands detected'}`;
+              break;
+          }
+          
+          alert(detailsText);
+        } else {
+          showToast('info', `No detailed data available for ${service}`);
+        }
+        break;
+      case 'retry':
+        // Retry analysis for the specific service
+        if (!selectedFile && !capturedImage) {
+          showToast('error', 'No image available to retry analysis');
+          return;
+        }
+        
+        // Set only the failed service for retry
+        setSelectedServices([service]);
+        showToast('info', `Retrying ${service} analysis...`);
+        
+        // Trigger analysis with just this service
+        handleAnalyze();
         break;
     }
   };
@@ -438,23 +548,175 @@ function App() {
       case 'NewTest':
         return (
           <div className="space-y-6">
-            {/* Control Panel */}
-            <div className="space-y-6">
-              <UploadArea
-                onFile={handleFileSelect}
-                onOpenCamera={handleOpenCamera}
-                selectedFile={selectedFile}
-                inputMethod={inputMethod}
-                onInputMethodChange={setInputMethod}
-                capturedImage={capturedImage}
-                isUploading={isAnalyzing}
-              />
-              
-              <FeatureSelector
-                selectedServices={selectedServices}
-                onToggle={handleServiceToggle}
-                disabled={isAnalyzing}
-              />
+            {/* Input Method Selector - Always visible at top */}
+            <div className="card">
+              <div className="flex items-center justify-center space-x-3">
+                <button
+                  onClick={() => setInputMethod('Upload')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    inputMethod === 'Upload' 
+                      ? "bg-blue-100 text-blue-700" 
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}>
+                  <div className="flex items-center space-x-2">
+                    <Upload className="w-4 h-4" />
+                    <span>Upload Image</span>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => setInputMethod('Camera')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    inputMethod === 'Camera' 
+                      ? "bg-blue-100 text-blue-700" 
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}>
+                  <div className="flex items-center space-x-2">
+                    <Camera className="w-4 h-4" />
+                    <span>Capture Photo</span>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => setInputMethod('LiveDetection')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    inputMethod === 'LiveDetection' 
+                      ? "bg-blue-100 text-blue-700" 
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}>
+                  <div className="flex items-center space-x-2">
+                    <Camera className="w-4 h-4" />
+                    <span>Live Detection</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Content based on selected input method */}
+            {inputMethod === 'LiveDetection' ? (
+              /* Live Detection Interface */
+              <div className="space-y-4">
+                {/* IP Webcam Toggle */}
+                <div className="card">
+                  <div className="bg-gray-50 dark:bg-slate-700/30 border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <Smartphone className="w-5 h-5 text-green-600" />
+                        <div className="text-left">
+                          <p className="text-sm font-medium text-gray-900 dark:text-slate-100">Use IP Webcam</p>
+                          <p className="text-xs text-gray-500 dark:text-slate-400">
+                            {useIPWebcamForLiveDetection ? 'Currently Using smartphone camera' : 'Currently Using laptop camera'}
+                          </p>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer" 
+                          checked={useIPWebcamForLiveDetection}
+                          onChange={() => setUseIPWebcamForLiveDetection(!useIPWebcamForLiveDetection)}
+                        />
+                        <div className="w-11 h-6 bg-gray-200 dark:bg-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 dark:peer-focus:ring-green-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  {useIPWebcamForLiveDetection && (
+                    <div className="mt-3">
+                      <IPWebcamUrlInput
+                        url={ipWebcamUrl}
+                        onUrlChange={setIpWebcamUrl}
+                        onSave={handleSaveIpWebcamUrl}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Live Detection Video Feed */}
+                <LiveDetectionModal
+                  onClose={() => setInputMethod('Upload')}
+                  useIPWebcam={useIPWebcamForLiveDetection}
+                  webcamUrl={ipWebcamUrl}
+                  embedded={true}
+                />
+              </div>
+            ) : inputMethod === 'Upload' ? (
+              /* Upload Interface */
+              <>
+                <div className="card">
+                  <div
+                    className="rounded-lg border-2 border-dashed border-gray-300 dark:border-slate-600 p-8 flex flex-col items-center gap-4 cursor-pointer transition-all hover:border-gray-400 dark:hover:border-slate-500"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const files = e.dataTransfer.files;
+                      if (files.length > 0 && files[0].type.startsWith('image/')) {
+                        handleFileSelect(files[0]);
+                      }
+                    }}
+                    onClick={() => document.getElementById('file-upload')?.click()}>
+                    
+                    {isAnalyzing ? (
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    ) : (
+                      <Upload className="w-12 h-12 text-gray-400" />
+                    )}
+                    
+                    <div className="text-center">
+                      <p className="text-lg font-medium text-gray-700 dark:text-slate-200">
+                        {isAnalyzing ? "Processing..." : "Drop image here or click to upload"}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+                        Supports JPG, PNG, WEBP up to 10MB
+                      </p>
+                    </div>
+
+                    <input
+                      id="file-upload"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const files = e.target.files;
+                        if (files && files.length > 0) {
+                          handleFileSelect(files[0]);
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </div>
+
+                  {selectedFile && (
+                    <div className="mt-4 bg-gray-50 dark:bg-slate-700 rounded-lg p-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex-shrink-0">
+                          <Check className="w-8 h-8 text-green-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-slate-100">
+                            {selectedFile.name}
+                          </p>
+                          <p className="text-sm text-gray-500 dark:text-slate-400">
+                            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                        <button 
+                          className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleFileSelect(null);
+                          }}>
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <FeatureSelector
+                  selectedServices={selectedServices}
+                  onToggle={handleServiceToggle}
+                  disabled={isAnalyzing}
+                />
               
               {/* Action buttons */}
               <div className="flex items-center justify-between">
@@ -488,11 +750,134 @@ function App() {
                     </span>
                   </div>
                 )}
-              </div>
-            </div>
+                </div>
+              </>
+            ) : (
+              /* Camera Interface */
+              <>
+                <div className="card">
+                  <div className="text-center space-y-4">
+                    <div className="bg-gray-100 dark:bg-slate-700 rounded-lg p-8 border-2 border-dashed border-gray-300 dark:border-slate-600">
+                      {useIPWebcamForCamera ? (
+                        <Smartphone className="w-16 h-16 text-green-600 mx-auto mb-4" />
+                      ) : (
+                        <Camera className="w-16 h-16 text-gray-400 dark:text-slate-500 mx-auto mb-4" />
+                      )}
+                      <p className="text-lg font-medium text-gray-700 dark:text-slate-200 mb-2">
+                        {useIPWebcamForCamera ? 'IP Webcam Photo Capture' : 'Camera Ready'}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+                        {useIPWebcamForCamera 
+                          ? 'Use your smartphone camera to capture photos'
+                          : 'Click below to open camera and capture an image'}
+                      </p>
+                      <button 
+                        type="button"
+                        className="btn-primary"
+                        onClick={handleOpenCamera}>
+                        Open Camera
+                      </button>
+                    </div>
 
-            {/* Results Section */}
-            {analysisResults && (
+                    {/* Camera Source Toggle */}
+                    <div className="space-y-3">
+                      <div className="bg-gray-50 dark:bg-slate-700/30 border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <Smartphone className="w-5 h-5 text-green-600" />
+                            <div className="text-left">
+                              <p className="text-sm font-medium text-gray-900 dark:text-slate-100">Use IP Webcam</p>
+                              <p className="text-xs text-gray-500 dark:text-slate-400">
+                                {useIPWebcamForCamera ? 'Using smartphone camera' : 'Using laptop camera'}
+                              </p>
+                            </div>
+                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only peer" 
+                              checked={useIPWebcamForCamera}
+                              onChange={() => setUseIPWebcamForCamera(!useIPWebcamForCamera)}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 dark:bg-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 dark:peer-focus:ring-green-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                          </label>
+                        </div>
+                      </div>
+                      
+                      {useIPWebcamForCamera && (
+                        <IPWebcamUrlInput
+                          url={ipWebcamUrl}
+                          onUrlChange={setIpWebcamUrl}
+                          onSave={handleSaveIpWebcamUrl}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <FeatureSelector
+                  selectedServices={selectedServices}
+                  onToggle={handleServiceToggle}
+                  disabled={isAnalyzing}
+                />
+
+                {capturedImage && (
+                  <div className="card">
+                    <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex-shrink-0">
+                          <Check className="w-8 h-8 text-green-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-slate-100">
+                            Captured Image
+                          </p>
+                          <p className="text-sm text-gray-500 dark:text-slate-400">
+                            Ready for analysis
+                          </p>
+                        </div>
+                        <button 
+                          className="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
+                          onClick={() => setCapturedImage(null)}>
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex items-center justify-between">
+                  <div className="flex space-x-3">
+                    <button
+                      className={`btn-primary ${!canAnalyze ? "opacity-50 cursor-not-allowed" : ""}`}
+                      onClick={handleAnalyze}
+                      disabled={!canAnalyze}>
+                      {isAnalyzing ? (
+                        <div className="flex items-center space-x-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          <span>Analyzing...</span>
+                        </div>
+                      ) : (
+                        <span>Analyze Image</span>
+                      )}
+                    </button>
+                  </div>
+                  
+                  {selectedServices.length > 0 && (
+                    <div className="text-sm text-gray-600 dark:text-slate-400">
+                      <span>Est. time: ~</span>
+                      <span className="font-medium">
+                        {selectedServices.length * 3}s
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Results Section - Only show for Upload/Camera, not Live Detection */}
+            {inputMethod !== 'LiveDetection' && analysisResults && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100">Analysis Results</h2>
@@ -508,7 +893,7 @@ function App() {
                     <ResultCard
                       key={service}
                       service={service}
-                      status="Success"
+                      status={getServiceStatus(service, analysisResults.results)}
                       result={analysisResults.results}
                       onAction={(action) => handleResultAction(service, action)}
                     />
@@ -557,7 +942,11 @@ function App() {
                           {new Date(item.metadata.processedAt).toLocaleString()}
                         </p>
                       </div>
-                      <span className="status-badge-success">{item.status}</span>
+                      <span className={`${
+                        item.status === 'Success' ? 'status-badge-success' :
+                        item.status === 'Warning' ? 'status-badge-warning' :
+                        'status-badge-error'
+                      }`}>{item.status}</span>
                     </div>
                     
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -981,6 +1370,8 @@ function App() {
           <CameraModal
             onCapture={handleCameraCapture}
             onClose={() => setShowCameraModal(false)}
+            useIPWebcam={useIPWebcamForCamera}
+            webcamUrl={ipWebcamUrl}
           />
         )}
       </AnimatePresence>
@@ -990,6 +1381,8 @@ function App() {
         {showLiveDetectionModal && (
           <LiveDetectionModal
             onClose={() => setShowLiveDetectionModal(false)}
+            useIPWebcam={useIPWebcamForLiveDetection}
+            webcamUrl={ipWebcamUrl}
           />
         )}
       </AnimatePresence>
@@ -1023,19 +1416,19 @@ function App() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
               transition={{ type: "spring", duration: 0.5 }}
-              className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+              className="bg-white dark:bg-slate-800 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-            <div className="flex items-center justify-between p-6 border-b">
+            <div className="flex items-center justify-between p-6 border-b dark:border-slate-700">
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Analysis Details</h2>
-                <p className="text-sm text-gray-500 mt-1">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100">Analysis Details</h2>
+                <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
                   {selectedHistoryItem.imageName} • {new Date(selectedHistoryItem.metadata.processedAt).toLocaleString()}
                 </p>
               </div>
               <button
                 onClick={() => setShowDetailsModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors">
+                className="text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1048,14 +1441,14 @@ function App() {
                 {selectedHistoryItem.results.ocr && (
                   <div className="card">
                     <div className="flex items-center space-x-2 mb-3">
-                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                        <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
                         </svg>
                       </div>
-                      <h3 className="font-medium text-gray-900">OCR (Text Recognition)</h3>
+                      <h3 className="font-medium text-gray-900 dark:text-slate-100">OCR (Text Recognition)</h3>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                    <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-3 text-sm text-gray-900 dark:text-slate-100">
                       <p className="whitespace-pre-wrap">{selectedHistoryItem.results.ocr.text || 'No text detected'}</p>
                     </div>
                     <div className="mt-3 flex space-x-2">
@@ -1076,27 +1469,27 @@ function App() {
                 {selectedHistoryItem.results.productCount && (
                   <div className="card">
                     <div className="flex items-center space-x-2 mb-3">
-                      <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                        <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="w-8 h-8 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                        <svg className="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
                         </svg>
                       </div>
-                      <h3 className="font-medium text-gray-900">Product Count</h3>
+                      <h3 className="font-medium text-gray-900 dark:text-slate-100">Product Count</h3>
                     </div>
                     <div className="text-center py-4">
-                      <div className="text-3xl font-bold text-green-600">
+                      <div className="text-3xl font-bold text-green-600 dark:text-green-400">
                         {selectedHistoryItem.results.productCount.total}
                       </div>
-                      <div className="text-sm text-gray-500">Products Detected</div>
+                      <div className="text-sm text-gray-500 dark:text-slate-400">Products Detected</div>
                     </div>
                     {selectedHistoryItem.results.productCount.detections && selectedHistoryItem.results.productCount.detections.length > 0 && (
                       <div className="mt-3">
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">Detections:</h4>
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Detections:</h4>
                         <div className="space-y-1">
                           {selectedHistoryItem.results.productCount.detections.map((detection, idx) => (
-                            <div key={idx} className="text-xs bg-gray-50 rounded p-2">
-                              <span className="font-medium">{detection.label}</span>
-                              <span className="text-gray-500 ml-2">
+                            <div key={idx} className="text-xs bg-gray-50 dark:bg-slate-700 rounded p-2">
+                              <span className="font-medium text-gray-900 dark:text-slate-100">{detection.label}</span>
+                              <span className="text-gray-500 dark:text-slate-400 ml-2">
                                 ({Math.round(detection.confidence * 100)}% confidence)
                               </span>
                             </div>
@@ -1110,18 +1503,18 @@ function App() {
                 {selectedHistoryItem.results.freshness && (
                   <div className="card">
                     <div className="flex items-center space-x-2 mb-3">
-                      <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                        <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
+                        <svg className="w-4 h-4 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707" />
                         </svg>
                       </div>
-                      <h3 className="font-medium text-gray-900">Freshness Detection</h3>
+                      <h3 className="font-medium text-gray-900 dark:text-slate-100">Freshness Detection</h3>
                     </div>
                     <div className="text-center py-4">
-                      <div className="text-3xl font-bold text-orange-600">
+                      <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">
                         {selectedHistoryItem.results.freshness.score}
                       </div>
-                      <div className="text-sm text-gray-500">Freshness Score</div>
+                      <div className="text-sm text-gray-500 dark:text-slate-400">Freshness Score</div>
                       <div className="mt-2">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           selectedHistoryItem.results.freshness.label === 'Fresh' ? 'bg-green-100 text-green-800' :
@@ -1138,33 +1531,33 @@ function App() {
                 {selectedHistoryItem.results.brand && (
                   <div className="card">
                     <div className="flex items-center space-x-2 mb-3">
-                      <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                        <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center">
+                        <svg className="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                       </div>
-                      <h3 className="font-medium text-gray-900">Brand Recognition</h3>
+                      <h3 className="font-medium text-gray-900 dark:text-slate-100">Brand Recognition</h3>
                     </div>
                     {selectedHistoryItem.results.brand.matches && selectedHistoryItem.results.brand.matches.length > 0 ? (
                       <div className="space-y-2">
                         {selectedHistoryItem.results.brand.matches.map((match, idx) => (
-                          <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                          <div key={idx} className="bg-gray-50 dark:bg-slate-700 rounded-lg p-3">
                             <div className="flex items-center justify-between">
-                              <span className="font-medium text-gray-900">{match.brand}</span>
+                              <span className="font-medium text-gray-900 dark:text-slate-100">{match.brand}</span>
                               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                                 match.isCounterfeit ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                               }`}>
                                 {match.isCounterfeit ? 'Counterfeit' : 'Authentic'}
                               </span>
                             </div>
-                            <div className="text-sm text-gray-500 mt-1">
+                            <div className="text-sm text-gray-500 dark:text-slate-400 mt-1">
                               Confidence: {Math.round(match.confidence * 100)}%
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-4 text-gray-500">
+                      <div className="text-center py-4 text-gray-500 dark:text-slate-400">
                         No brands detected
                       </div>
                     )}
@@ -1172,11 +1565,11 @@ function App() {
                 )}
               </div>
 
-              <div className="mt-6 pt-6 border-t">
+              <div className="mt-6 pt-6 border-t dark:border-slate-700">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500">Job ID: {selectedHistoryItem.jobId}</p>
-                    <p className="text-sm text-gray-500">Status: {selectedHistoryItem.status}</p>
+                    <p className="text-sm text-gray-500 dark:text-slate-400">Job ID: {selectedHistoryItem.jobId}</p>
+                    <p className="text-sm text-gray-500 dark:text-slate-400">Status: {selectedHistoryItem.status}</p>
                   </div>
                   <button 
                     className="btn-secondary text-sm"

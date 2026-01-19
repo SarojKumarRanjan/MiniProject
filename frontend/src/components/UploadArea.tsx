@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Camera, X, Check } from 'lucide-react';
+import { Upload, Camera, X, Check, Smartphone } from 'lucide-react';
 import type { InputMethod } from '../types';
+import IPWebcamUrlInput from './IPWebcamUrlInput';
 
 interface UploadAreaProps {
   onFile: (file: File | null) => void;
@@ -10,6 +11,13 @@ interface UploadAreaProps {
   onInputMethodChange: (method: InputMethod) => void;
   capturedImage: string | null;
   isUploading?: boolean;
+  useIPWebcamForCamera?: boolean;
+  onToggleIPWebcamForCamera?: () => void;
+  useIPWebcamForLiveDetection?: boolean;
+  onToggleIPWebcamForLiveDetection?: () => void;
+  ipWebcamUrl?: string;
+  onIpWebcamUrlChange?: (url: string) => void;
+  onSaveIpWebcamUrl?: () => void;
 }
 
 const UploadArea: React.FC<UploadAreaProps> = ({
@@ -19,7 +27,14 @@ const UploadArea: React.FC<UploadAreaProps> = ({
   inputMethod,
   onInputMethodChange,
   capturedImage,
-  isUploading = false
+  isUploading = false,
+  useIPWebcamForCamera = false,
+  onToggleIPWebcamForCamera,
+  useIPWebcamForLiveDetection = false,
+  onToggleIPWebcamForLiveDetection,
+  ipWebcamUrl = '',
+  onIpWebcamUrlChange,
+  onSaveIpWebcamUrl
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,15 +164,21 @@ const UploadArea: React.FC<UploadAreaProps> = ({
             />
           </div>
         ) : inputMethod === 'Camera' ? (
-          // Camera capture section
+          // Camera capture section with toggle
           <div className="text-center space-y-4">
             <div className="bg-gray-100 dark:bg-slate-700 rounded-lg p-8 border-2 border-dashed border-gray-300 dark:border-slate-600">
-              <Camera className="w-16 h-16 text-gray-400 dark:text-slate-500 mx-auto mb-4" />
+              {useIPWebcamForCamera ? (
+                <Smartphone className="w-16 h-16 text-green-600 mx-auto mb-4" />
+              ) : (
+                <Camera className="w-16 h-16 text-gray-400 dark:text-slate-500 mx-auto mb-4" />
+              )}
               <p className="text-lg font-medium text-gray-700 dark:text-slate-200 mb-2">
-                Camera Ready
+                {useIPWebcamForCamera ? 'IP Webcam Photo Capture' : 'Camera Ready'}
               </p>
               <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
-                Click below to open camera and capture an image
+                {useIPWebcamForCamera 
+                  ? 'Use your smartphone camera to capture photos'
+                  : 'Click below to open camera and capture an image'}
               </p>
               <button 
                 type="button"
@@ -166,17 +187,60 @@ const UploadArea: React.FC<UploadAreaProps> = ({
                 Open Camera
               </button>
             </div>
+
+            {/* Camera Source Toggle */}
+            {onToggleIPWebcamForCamera && (
+              <div className="space-y-3">
+                <div className="bg-gray-50 dark:bg-slate-700/30 border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <Smartphone className="w-5 h-5 text-green-600" />
+                      <div className="text-left">
+                        <p className="text-sm font-medium text-gray-900 dark:text-slate-100">Use IP Webcam</p>
+                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                          {useIPWebcamForCamera ? 'Using smartphone camera' : 'Using aptop webCam'}
+                        </p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer" 
+                        checked={useIPWebcamForCamera}
+                        onChange={onToggleIPWebcamForCamera}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 dark:bg-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 dark:peer-focus:ring-green-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                    </label>
+                  </div>
+                </div>
+                
+                {/* IP Webcam URL Input */}
+                {useIPWebcamForCamera && onIpWebcamUrlChange && (
+                  <IPWebcamUrlInput
+                    url={ipWebcamUrl}
+                    onUrlChange={onIpWebcamUrlChange}
+                    onSave={onSaveIpWebcamUrl}
+                  />
+                )}
+              </div>
+            )}
           </div>
         ) : (
           // Live Detection section
           <div className="text-center space-y-4">
             <div className="bg-gradient-to-br from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 rounded-lg p-8 border-2 border-dashed border-green-300 dark:border-green-700">
-              <Camera className="w-16 h-16 text-green-500 mx-auto mb-4 animate-pulse" />
+              {useIPWebcamForLiveDetection ? (
+                <Smartphone className="w-16 h-16 text-green-500 mx-auto mb-4 animate-pulse" />
+              ) : (
+                <Camera className="w-16 h-16 text-green-500 mx-auto mb-4 animate-pulse" />
+              )}
               <p className="text-lg font-medium text-gray-700 dark:text-slate-200 mb-2">
-                Live Object Detection
+                {useIPWebcamForLiveDetection ? 'IP Webcam Live Detection' : 'Live Object Detection'}
               </p>
               <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
-                Real-time object counting with bounding boxes
+                {useIPWebcamForLiveDetection 
+                  ? 'Real-time detection using smartphone camera'
+                  : 'Real-time object counting with bounding boxes'}
               </p>
               <button 
                 className="btn-primary bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600"
@@ -184,13 +248,52 @@ const UploadArea: React.FC<UploadAreaProps> = ({
                 Start Live Detection
               </button>
             </div>
+            
+            {/* Camera Source Toggle */}
+            {onToggleIPWebcamForLiveDetection && (
+              <div className="space-y-3">
+                <div className="bg-gray-50 dark:bg-slate-700/30 border border-gray-200 dark:border-slate-600 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <Smartphone className="w-5 h-5 text-green-600" />
+                      <div className="text-left">
+                        <p className="text-sm font-medium text-gray-900 dark:text-slate-100">Use IP Webcam</p>
+                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                          {useIPWebcamForLiveDetection ? 'Using smartphone camera' : 'Using laptop camera'}
+                        </p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer" 
+                        checked={useIPWebcamForLiveDetection}
+                        onChange={onToggleIPWebcamForLiveDetection}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 dark:bg-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 dark:peer-focus:ring-green-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                    </label>
+                  </div>
+                </div>
+                
+                {/* IP Webcam URL Input */}
+                {useIPWebcamForLiveDetection && onIpWebcamUrlChange && (
+                  <IPWebcamUrlInput
+                    url={ipWebcamUrl}
+                    onUrlChange={onIpWebcamUrlChange}
+                    onSave={onSaveIpWebcamUrl}
+                  />
+                )}
+              </div>
+            )}
+            
             <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-left">
               <p className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-2">✨ Live Detection Features:</p>
               <ul className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
-                <li>• Real-time object counting</li>
-                <li>• Bounding boxes around detected objects</li>
-                <li>• Live FPS display</li>
+                <li>• Real-time object counting at 5 FPS</li>
+                <li>• Green bounding boxes around detected objects</li>
+                <li>• Live FPS and count display</li>
                 <li>• Pause/Resume functionality</li>
+                {useIPWebcamForLiveDetection && <li>• Uses high-quality smartphone camera</li>}
               </ul>
             </div>
           </div>

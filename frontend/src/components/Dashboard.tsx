@@ -476,7 +476,7 @@ const Dashboard: React.FC<DashboardProps> = ({ userName, history, onNavigate, sh
               </div>
             </div>
             <p className="text-sm text-gray-600 dark:text-slate-400 mb-1">Success Rate</p>
-            <p className="text-3xl font-bold text-gray-900 dark:text-slate-100">{successRateAnimated}.2%</p>
+            <p className="text-3xl font-bold text-gray-900 dark:text-slate-100">{successRateAnimated}%</p>
           </div>
         </motion.div>
 

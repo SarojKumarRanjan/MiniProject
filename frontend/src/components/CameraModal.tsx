@@ -4,21 +4,60 @@ import { Camera, X, RotateCcw } from 'lucide-react';
 interface CameraModalProps {
   onCapture: (imageData: string) => void;
   onClose: () => void;
+  useIPWebcam?: boolean;
+  webcamUrl?: string;
 }
 
-const CameraModal: React.FC<CameraModalProps> = ({ onCapture, onClose }) => {
+const CameraModal: React.FC<CameraModalProps> = ({ 
+  onCapture, 
+  onClose,
+  useIPWebcam = false,
+  webcamUrl
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string>('');
 
+  // Initialize camera or IP Webcam
   useEffect(() => {
-    startCamera();
+    if (useIPWebcam) {
+      startIPWebcam();
+    } else {
+      startCamera();
+    }
     return () => {
       stopCamera();
     };
-  }, []);
+  }, [useIPWebcam]);
+
+  // IP Webcam frame update
+  useEffect(() => {
+    if (!useIPWebcam) return;
+    
+    const streamUrl = `${webcamUrl}/shot.jpg`;
+    const updateFrame = () => {
+      setImageUrl(`${streamUrl}?t=${Date.now()}`);
+    };
+
+    updateFrame();
+    const intervalId = setInterval(updateFrame, 100); // 10 FPS
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [useIPWebcam, webcamUrl]);
+
+  const startIPWebcam = () => {
+    setIsLoading(true);
+    setError(null);
+    setTimeout(() => {
+      setIsLoading(false);
+    }, 1000);
+  };
 
   const startCamera = async () => {
     try {
@@ -56,26 +95,45 @@ const CameraModal: React.FC<CameraModalProps> = ({ onCapture, onClose }) => {
   };
 
   const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!canvasRef.current) return;
 
-    const video = videoRef.current;
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
-
     if (!context) return;
 
-    // Set canvas dimensions to match video
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-
-    // Draw video frame to canvas
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (useIPWebcam) {
+      // IP Webcam mode
+      if (!imgRef.current) return;
+      
+      const img = imgRef.current;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      context.drawImage(img, 0, 0);
+    } else {
+      // Laptop camera mode
+      if (!videoRef.current) return;
+      
+      const video = videoRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
 
     // Convert canvas to base64 image
     const imageData = canvas.toDataURL('image/jpeg', 0.8);
     
     onCapture(imageData);
     stopCamera();
+  };
+
+  const handleImageLoad = () => {
+    setIsLoading(false);
+    setError(null);
+  };
+
+  const handleImageError = () => {
+    setError('Cannot connect to IP Webcam. Make sure the app is running.');
+    setIsLoading(false);
   };
 
   const handleClose = () => {
@@ -134,20 +192,40 @@ const CameraModal: React.FC<CameraModalProps> = ({ onCapture, onClose }) => {
 
           {!isLoading && !error && (
             <>
-              <video
-                ref={videoRef}
-                className="w-full h-full object-contain"
-                autoPlay
-                playsInline
-                muted
-              />
+              {/* Laptop camera */}
+              {!useIPWebcam && (
+                <video
+                  ref={videoRef}
+                  className="w-full h-full object-contain"
+                  autoPlay
+                  playsInline
+                  muted
+                />
+              )}
+
+              {/* IP Webcam */}
+              {useIPWebcam && (
+                <img
+                  ref={imgRef}
+                  src={imageUrl}
+                  alt="IP Webcam Feed"
+                  className="w-full h-full object-contain"
+                  onLoad={handleImageLoad}
+                  onError={handleImageError}
+                />
+              )}
               
               {/* Capture overlay */}
               <div className="absolute inset-0 pointer-events-none">
                 <div className="absolute inset-4 border-2 border-white border-dashed rounded-lg opacity-50"></div>
                 <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
-                  Position your image within the frame
+                  {useIPWebcam ? 'Position phone to frame product' : 'Position your image within the frame'}
                 </div>
+                {useIPWebcam && (
+                  <div className="absolute top-4 right-4 bg-green-500 px-2 py-1 rounded text-xs text-white font-bold">
+                    IP WEBCAM
+                  </div>
+                )}
               </div>
             </>
           )}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Hash, Leaf, Shield, Loader, AlertCircle, Copy, Save, Download, RotateCcw } from 'lucide-react';
+import { FileText, Hash, Leaf, Shield, Loader, AlertCircle, Copy, Eye, Download, RotateCcw } from 'lucide-react';
 import type { ServiceType, AnalysisStatus } from '../types';
 
 interface ResultCardProps {
@@ -139,39 +139,66 @@ const ResultCard: React.FC<ResultCardProps> = ({ service, status, result, onActi
 
       case 'BrandRecognition':
         if (status === 'Success') {
+          const brandData = result?.brand;
+          const matches = brandData?.matches || [];
+          
+          if (matches.length === 0) {
+            return (
+              <div className="text-center py-6">
+                <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Shield className="w-6 h-6 text-gray-400" />
+                </div>
+                <p className="text-sm text-gray-600 mb-1">No brands detected</p>
+                <p className="text-xs text-gray-500">Try uploading an image with visible brand text</p>
+              </div>
+            );
+          }
+          
           return (
             <div className="space-y-3">
               <div className="space-y-2">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <span className="text-xs font-bold text-blue-600">B</span>
+                {matches.map((match: any, index: number) => {
+                  const confidencePercent = Math.round((match.confidence || 0) * 100);
+                  const isCounterfeit = match.isCounterfeit || false;
+                  const brandInitial = match.brand?.charAt(0) || 'B';
+                  
+                  return (
+                    <div 
+                      key={index}
+                      className={`flex items-center justify-between p-3 rounded-lg ${
+                        isCounterfeit 
+                          ? 'bg-red-50 border border-red-200' 
+                          : 'bg-green-50 border border-green-200'
+                      }`}>
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          isCounterfeit ? 'bg-red-100' : 'bg-green-100'
+                        }`}>
+                          <span className={`text-xs font-bold ${
+                            isCounterfeit ? 'text-red-600' : 'text-green-600'
+                          }`}>
+                            {brandInitial}
+                          </span>
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900">{match.brand}</div>
+                          <div className="text-sm text-gray-500">
+                            Confidence: {confidencePercent}%
+                            {match.matched_text && match.matched_text.length > 0 && (
+                              <span className="ml-2 text-xs">
+                                (found: {match.matched_text.join(', ')})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <span className={isCounterfeit ? 'status-badge-error' : 'status-badge-success'}>
+                        {isCounterfeit ? 'Counterfeit' : 'Authentic'}
+                      </span>
                     </div>
-                    <div>
-                      <div className="font-medium">Brand X</div>
-                      <div className="text-sm text-gray-500">Confidence: 94%</div>
-                    </div>
-                  </div>
-                  <span className="status-badge-success">Authentic</span>
-                </div>
-                <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                      <span className="text-xs font-bold text-red-600">?</span>
-                    </div>
-                    <div>
-                      <div className="font-medium">Unknown Brand</div>
-                      <div className="text-sm text-gray-500">Confidence: 23%</div>
-                    </div>
-                  </div>
-                  <span className="status-badge-error">Suspicious</span>
-                </div>
+                  );
+                })}
               </div>
-              <button 
-                className="btn-secondary text-xs py-1 px-2 w-full"
-                onClick={() => onAction('flag')}>
-                Flag as Counterfeit
-              </button>
             </div>
           );
         }
@@ -194,7 +221,7 @@ const ResultCard: React.FC<ResultCardProps> = ({ service, status, result, onActi
           <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <p className="text-sm text-gray-600">Analysis failed. Please try again.</p>
           <button 
-            className="btn-secondary text-xs mt-3"
+            className="btn-secondary text-xs mt-3 mx-auto flex items-center"
             onClick={() => onAction('retry')}>
             <RotateCcw className="w-3 h-3 mr-1" />
             Retry
@@ -221,8 +248,8 @@ const ResultCard: React.FC<ResultCardProps> = ({ service, status, result, onActi
             {getServiceIcon(service)}
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-            <p className="text-xs text-gray-500">{shortTitle}</p>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{shortTitle}</p>
           </div>
         </div>
         <span className={statusClass}>{statusText}</span>
@@ -235,10 +262,10 @@ const ResultCard: React.FC<ResultCardProps> = ({ service, status, result, onActi
       <div className="flex items-center justify-between pt-4 border-t border-gray-200">
         <div className="flex space-x-2">
           <button 
-            className="btn-secondary text-xs py-1 px-2"
-            onClick={() => onAction('save')}>
-            <Save className="w-3 h-3 mr-1" />
-            Save Result
+            className="flex items-center btn-secondary text-xs py-1 px-2 gap-1"
+            onClick={() => onAction('details')}>
+            <Eye className="w-3 h-3 mr-1" />
+            View Details
           </button>
           {status === 'Success' && (
             <button 

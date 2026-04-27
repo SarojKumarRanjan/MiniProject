@@ -38,21 +38,24 @@ export const stringToAnalysisStatus = (status: string): AnalysisStatus => {
 export const analyzeImage = async (
   file: File | null,
   capturedImage: string | null,
+  staticImagePath: string | null,
   services: ServiceType[],
   _onProgress?: (message: string) => void
 ): Promise<AnalysisResponse> => {
   try {
-    if (!file && !capturedImage) {
+    if (!file && !capturedImage && !staticImagePath) {
       throw new Error('No image provided');
     }
 
     const formData = new FormData();
     
-    // Add file or captured image
+    // Add file or captured image or static image path
     if (file) {
       formData.append('image', file);
     } else if (capturedImage) {
       formData.append('captured_image', capturedImage);
+    } else if (staticImagePath) {
+      formData.append('static_image_path', staticImagePath);
     }
     
     // Add services
@@ -89,7 +92,10 @@ export const analyzeImage = async (
         freshness: data.results?.freshness ? {
           score: data.results.freshness.score || 0,
           label: data.results.freshness.label || '',
-          regions: data.results.freshness.regions || []
+          regions: data.results.freshness.regions || [],
+          color: data.results.freshness.color,
+          texture: data.results.freshness.texture,
+          spots: data.results.freshness.spots
         } : undefined,
         brand: data.results?.brand ? {
           matches: data.results.brand.matches || []
@@ -104,6 +110,24 @@ export const analyzeImage = async (
   } catch (error) {
     console.error('API Error:', error);
     throw error;
+  }
+};
+
+// Get static assets
+export const getStaticAssets = async (): Promise<Record<string, string[]>> => {
+  try {
+    const response = await fetch(`${BASE_URL}/api/static-assets`, {
+      method: 'GET',
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch static assets:', error);
+    return {};
   }
 };
 

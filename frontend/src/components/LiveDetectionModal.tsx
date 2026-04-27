@@ -5,6 +5,7 @@ interface LiveDetectionModalProps {
   onClose: () => void;
   useIPWebcam?: boolean;
   webcamUrl?: string;
+  staticVideoUrl?: string;
   embedded?: boolean;
 }
 
@@ -12,6 +13,7 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
   onClose,
   useIPWebcam = false,
   webcamUrl,
+  staticVideoUrl,
   embedded = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -25,7 +27,9 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [objectCount, setObjectCount] = useState<number>(0);
+  const [cumulativeCount, setCumulativeCount] = useState<number>(0);
   const [fps, setFps] = useState<number>(0);
+  const [sessionId, setSessionId] = useState<string>('');
   const [cameraStarted, setCameraStarted] = useState(false);
   const [selectedFps, setSelectedFps] = useState<number>(5); // Default 5 FPS
   const [useMaxFps, setUseMaxFps] = useState<boolean>(false);
@@ -114,6 +118,9 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
     let intervalId: number;
     let lastTime = Date.now();
     let frameCount = 0;
+    
+    // Create an AbortController to cancel pending fetch requests
+    const abortController = new AbortController();
 
     const detectLoop = async () => {
       try {
@@ -164,15 +171,20 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
+          signal: abortController.signal,
           body: JSON.stringify({ 
             frame: frameData,
-            include_boxes: true 
+            include_boxes: true,
+            session_id: sessionId 
           })
         });
 
         if (response.ok) {
           const data = await response.json();
           setObjectCount(data.count || 0);
+          if (data.cumulative_count !== undefined) {
+            setCumulativeCount(data.cumulative_count);
+          }
 
           // Display annotated frame with boxes
           if (data.annotated_frame && displayCanvasRef.current) {
@@ -201,7 +213,11 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
 
           setError(null);
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          console.log('Detection fetch aborted');
+          return;
+        }
         console.error('Detection error:', err);
         if (useIPWebcam) {
           setError('Connection lost. Check if IP Webcam is running.');
@@ -220,6 +236,7 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
       rafId = requestAnimationFrame(rafLoop);
       
       return () => {
+        abortController.abort();
         if (rafId) {
           cancelAnimationFrame(rafId);
         }
@@ -229,12 +246,13 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
       intervalId = setInterval(detectLoop, DETECTION_INTERVAL);
       
       return () => {
+        abortController.abort();
         if (intervalId) {
           clearInterval(intervalId);
         }
       };
     }
-  }, [isDetecting, useIPWebcam, webcamUrl, selectedFps, useMaxFps]);
+  }, [isDetecting, useIPWebcam, webcamUrl, selectedFps, useMaxFps, sessionId]);
 
   const startIPWebcam = async () => {
     // Validate webcamUrl first
@@ -283,6 +301,33 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
     try {
       setIsLoading(true);
       setError(null);
+
+      if (staticVideoUrl) {
+        if (videoRef.current) {
+          videoRef.current.src = staticVideoUrl;
+          videoRef.current.loop = true;
+          videoRef.current.muted = true;
+          videoRef.current.crossOrigin = "anonymous";
+          
+          videoRef.current.onloadeddata = () => {
+            videoRef.current?.play()
+              .then(() => {
+                setIsLoading(false);
+                setIsDetecting(true);
+              })
+              .catch((err) => {
+                setError('Failed to play static video.');
+                setIsLoading(false);
+              });
+          };
+          
+          videoRef.current.onerror = () => {
+            setError('Failed to load static video.');
+            setIsLoading(false);
+          };
+        }
+        return;
+      }
 
       // Try with environment camera (back camera)
       let mediaStream;
@@ -346,9 +391,18 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
 
   const toggleDetection = () => {
     setIsDetecting(!isDetecting);
+    if (staticVideoUrl && videoRef.current) {
+      if (isDetecting) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+    }
   };
 
   const handleStartCamera = () => {
+    // Generate a unique session ID for tracking
+    setSessionId(`session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
     setCameraStarted(true);
   };
 
@@ -357,6 +411,7 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
     setCameraStarted(false);
     setIsDetecting(false);
     setObjectCount(0);
+    setCumulativeCount(0);
     setFps(0);
     setError(null);
   };
@@ -374,24 +429,30 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
         <div className={`flex items-center justify-between p-4 border-b dark:border-slate-700 ${
           embedded ? 'rounded-t-lg' : ''
         } ${
-          useIPWebcam 
-            ? 'bg-gradient-to-r from-green-600 to-emerald-600'
-            : 'bg-gradient-to-r from-blue-600 to-purple-600'
+          staticVideoUrl
+            ? 'bg-gradient-to-r from-orange-500 to-red-600'
+            : useIPWebcam 
+              ? 'bg-gradient-to-r from-green-600 to-emerald-600'
+              : 'bg-gradient-to-r from-blue-600 to-purple-600'
         } text-white`}>
           <div className="flex items-center space-x-3">
-            {useIPWebcam ? (
+            {staticVideoUrl ? (
+              <Play className="w-6 h-6" />
+            ) : useIPWebcam ? (
               <Smartphone className="w-6 h-6" />
             ) : (
               <Camera className="w-6 h-6" />
             )}
             <div>
               <h3 className="text-lg font-semibold">
-                {useIPWebcam ? 'IP Webcam Live Detection' : 'Live Object Detection'}
+                {staticVideoUrl ? 'Video Object Detection' : useIPWebcam ? 'IP Webcam Live Detection' : 'Live Object Detection'}
               </h3>
               <p className="text-xs text-blue-100">
-                {useIPWebcam 
-                  ? 'Real-time detection via smartphone camera'
-                  : 'Real-time counting with bounding boxes'}
+                {staticVideoUrl 
+                  ? 'Real-time detection on video file'
+                  : useIPWebcam 
+                    ? 'Real-time detection via smartphone camera'
+                    : 'Real-time counting with bounding boxes'}
               </p>
             </div>
           </div>
@@ -410,32 +471,38 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
             <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 to-black z-10">
               <div className="text-white text-center max-w-md px-4">
                 <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-green-500 to-blue-500 rounded-full flex items-center justify-center">
-                  {useIPWebcam ? (
+                  {staticVideoUrl ? (
+                    <Play className="w-10 h-10" />
+                  ) : useIPWebcam ? (
                     <Smartphone className="w-10 h-10" />
                   ) : (
                     <Camera className="w-10 h-10" />
                   )}
                 </div>
                 <h3 className="text-2xl font-bold mb-2">
-                  {useIPWebcam ? 'IP Webcam Live Detection' : 'Live Object Detection'}
+                  {staticVideoUrl ? 'Video Object Detection' : useIPWebcam ? 'IP Webcam Live Detection' : 'Live Object Detection'}
                 </h3>
                 <p className="text-gray-300 mb-6">
-                  {useIPWebcam 
-                    ? 'Ready to connect to your smartphone camera for real-time object detection'
-                    : 'Ready to use your laptop camera for real-time object detection'}
+                  {staticVideoUrl 
+                    ? 'Ready to process the selected video file for object detection'
+                    : useIPWebcam 
+                      ? 'Ready to connect to your smartphone camera for real-time object detection'
+                      : 'Ready to use your laptop camera for real-time object detection'}
                 </p>
                 <button
                   onClick={handleStartCamera}
                   className="px-6 py-3 bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105">
                   <div className="flex items-center space-x-2">
                     <Play className="w-5 h-5" />
-                    <span>Start Live Detection</span>
+                    <span>{staticVideoUrl ? 'Start Video Detection' : 'Start Live Detection'}</span>
                   </div>
                 </button>
                 <p className="text-xs text-gray-400 mt-4">
-                  {useIPWebcam 
-                    ? `Connecting to: ${webcamUrl}`
-                    : 'Camera permission will be requested'}
+                  {staticVideoUrl
+                    ? 'Video will play automatically'
+                    : useIPWebcam 
+                      ? `Connecting to: ${webcamUrl}`
+                      : 'Camera permission will be requested'}
                 </p>
               </div>
             </div>
@@ -446,10 +513,10 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
               <div className="text-white text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
                 <p className="text-lg">
-                  {useIPWebcam ? 'Connecting to IP Webcam...' : 'Starting camera...'}
+                  {staticVideoUrl ? 'Loading video...' : useIPWebcam ? 'Connecting to IP Webcam...' : 'Starting camera...'}
                 </p>
                 <p className="text-sm text-gray-300 mt-2">
-                  {useIPWebcam ? webcamUrl : 'Please allow camera access'}
+                  {staticVideoUrl ? 'Please wait' : useIPWebcam ? webcamUrl : 'Please allow camera access'}
                 </p>
               </div>
             </div>
@@ -546,19 +613,23 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
           {/* Camera source badge */}
           <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-lg">
             <div className="flex items-center space-x-2">
-              <div className={`w-2 h-2 rounded-full ${useIPWebcam ? 'bg-green-400' : 'bg-blue-400'}`} />
+              <div className={`w-2 h-2 rounded-full ${staticVideoUrl ? 'bg-orange-400' : useIPWebcam ? 'bg-green-400' : 'bg-blue-400'}`} />
               <span className="text-xs text-white font-medium">
-                {useIPWebcam ? 'IP Webcam' : 'Laptop Camera'}
+                {staticVideoUrl ? 'Video File' : useIPWebcam ? 'IP Webcam' : 'Laptop Camera'}
               </span>
             </div>
           </div>
 
           {/* Stats overlay */}
           <div className="absolute bottom-4 left-4 right-4 bg-black/70 backdrop-blur-sm rounded-lg p-4 text-white">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-4">
               <div className="text-center">
                 <div className="text-3xl font-bold text-green-400">{objectCount}</div>
-                <div className="text-xs text-gray-300">Objects Detected</div>
+                <div className="text-xs text-gray-300">In Frame</div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-yellow-400">{cumulativeCount}</div>
+                <div className="text-xs text-gray-300">Total Count</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-cyan-400">{fps}</div>
@@ -582,9 +653,11 @@ const LiveDetectionModal: React.FC<LiveDetectionModalProps> = ({
           <div className="text-sm text-gray-600 dark:text-slate-300 mb-3">
             <p className="font-medium">✓ Green boxes show detected objects</p>
             <p className="text-xs mt-1">
-              {useIPWebcam 
-                ? `✓ Using smartphone camera at ${useMaxFps ? 'max' : `~${selectedFps}`} FPS` 
-                : `✓ Using laptop camera at ${useMaxFps ? 'max' : `~${selectedFps}`} FPS`}
+              {staticVideoUrl 
+                ? `✓ Processing video file at ${useMaxFps ? 'max' : `~${selectedFps}`} FPS` 
+                : useIPWebcam 
+                  ? `✓ Using smartphone camera at ${useMaxFps ? 'max' : `~${selectedFps}`} FPS` 
+                  : `✓ Using laptop camera at ${useMaxFps ? 'max' : `~${selectedFps}`} FPS`}
             </p>
           </div>
 

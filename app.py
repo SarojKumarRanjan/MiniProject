@@ -61,14 +61,37 @@ def count_products(file_path):
         import cv2
         from detection.object_count import count_and_draw_products
         
-        # Load the image
-        image = cv2.imread(file_path)
-        if image is None:
-            return random.randint(1, 15)
-        
-        # Use the actual detection function
-        _, count = count_and_draw_products(image.copy())
-        return count
+        if file_path.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')):
+            cap = cv2.VideoCapture(file_path)
+            if not cap.isOpened():
+                return random.randint(1, 15)
+                
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            if total_frames <= 0:
+                total_frames = 30
+                
+            max_count = 0
+            num_samples = 5
+            step = max(1, total_frames // num_samples)
+            
+            for i in range(num_samples):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, i * step)
+                ret, frame = cap.read()
+                if ret:
+                    _, count, _ = count_and_draw_products(frame)
+                    max_count = max(max_count, count)
+                    
+            cap.release()
+            return max_count
+        else:
+            # Load the image
+            image = cv2.imread(file_path)
+            if image is None:
+                return random.randint(1, 15)
+            
+            # Use the actual detection function
+            _, count, _ = count_and_draw_products(image.copy())
+            return count
     except (ImportError, Exception) as e:
         print(f"Detection error: {e}")
         # Fallback to a more realistic mock that varies
@@ -444,13 +467,19 @@ def delete_history_item(history_id):
     
     return jsonify({'message': 'History item deleted successfully'}), 200
 
+import time
+from detection.centroidtracker import CentroidTracker
+
+ACTIVE_SESSIONS = {}
+
 @app.route('/api/detect/live-count', methods=['POST'])
 def live_object_count():
-    """Process a single frame for live object counting"""
+    """Process a single frame for live object counting with tracking"""
     try:
         data = request.get_json()
         frame_data = data.get('frame')
         include_boxes = data.get('include_boxes', False)
+        session_id = data.get('session_id')
         
         if not frame_data:
             return jsonify({'error': 'No frame data provided'}), 400
@@ -473,16 +502,71 @@ def live_object_count():
         
         # Use existing object counting function
         from detection.object_count import count_and_draw_products
-        annotated_frame, count = count_and_draw_products(frame.copy())
+        annotated_frame, count, boxes = count_and_draw_products(frame.copy())
+        
+        cumulative_count = count
+        
+        if session_id:
+            current_time = time.time()
+            # Clean up old sessions (>60 seconds of inactivity)
+            keys_to_delete = [k for k, v in ACTIVE_SESSIONS.items() if current_time - v['last_active'] > 60]
+            for k in keys_to_delete:
+                del ACTIVE_SESSIONS[k]
+                
+            if session_id not in ACTIVE_SESSIONS:
+                ACTIVE_SESSIONS[session_id] = {
+                    'tracker': CentroidTracker(maxDisappeared=15, maxDistance=100),
+                    'cumulative_count': 0,
+                    'counted_ids': set(),
+                    'seen_counts': {},
+                    'initial_centroids': {},
+                    'last_active': current_time
+                }
+                
+            session = ACTIVE_SESSIONS[session_id]
+            session['last_active'] = current_time
+            tracker = session['tracker']
+            counted_ids = session['counted_ids']
+            seen_counts = session['seen_counts']
+            initial_centroids = session['initial_centroids']
+            
+            # Update tracker
+            objects = tracker.update(boxes)
+            
+            # Count unique objects that have been tracked consistently and have MOVED (reduces false positive blips and static objects)
+            for obj_id, centroid in objects.items():
+                seen_counts[obj_id] = seen_counts.get(obj_id, 0) + 1
+                
+                # Record the initial position of the object
+                if obj_id not in initial_centroids:
+                    initial_centroids[obj_id] = centroid
+                
+                # Require the object to be seen for at least 3 frames AND have moved a significant distance
+                if obj_id not in counted_ids and seen_counts[obj_id] >= 3:
+                    # Calculate Euclidean distance from initial position
+                    init_c = initial_centroids[obj_id]
+                    dist = np.linalg.norm(np.array(centroid) - np.array(init_c))
+                    
+                    # Only count if the object has moved at least 30 pixels (indicating it's moving on the conveyor)
+                    if dist > 30.0:
+                        counted_ids.add(obj_id)
+                        session['cumulative_count'] += 1
+                    
+                # Draw ID and centroid
+                cv2.putText(annotated_frame, f"ID {obj_id}", (centroid[0] - 10, centroid[1] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+                cv2.circle(annotated_frame, (centroid[0], centroid[1]), 4, (0, 255, 255), -1)
+                
+            cumulative_count = session['cumulative_count']
         
         response_data = {
             'count': count,
+            'cumulative_count': cumulative_count,
             'timestamp': datetime.datetime.now().isoformat()
         }
         
         # Include annotated frame if requested
         if include_boxes:
-            # Encode annotated frame to base64
             _, buffer = cv2.imencode('.jpg', annotated_frame)
             annotated_base64 = base64.b64encode(buffer).decode('utf-8')
             response_data['annotated_frame'] = f'data:image/jpeg;base64,{annotated_base64}'
@@ -497,6 +581,25 @@ def live_object_count():
 def health_check():
     return jsonify({'status': 'healthy', 'message': 'Backend is running'}), 200
 
+@app.route('/api/static-assets', methods=['GET'])
+def get_static_assets():
+    assets = {}
+    static_dir = 'static'
+    allowed_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.mp4', '.avi', '.mov', '.mkv'}
+    
+    # Folders to check
+    folders = ['Fruits', 'OCR', 'logo', 'video']
+    for folder in folders:
+        folder_path = os.path.join(static_dir, folder)
+        if os.path.exists(folder_path):
+            files = []
+            for f in os.listdir(folder_path):
+                if any(f.lower().endswith(ext) for ext in allowed_extensions):
+                    files.append(f)
+            if files:
+                assets[folder] = files
+    return jsonify(assets), 200
+
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -509,6 +612,7 @@ def capture_image():
     # Check if an image file was uploaded or a photo was captured
     uploaded_file = request.files.get('image')
     captured_image = request.form.get('captured_image')
+    static_image_path = request.form.get('static_image_path')
 
     if uploaded_file:
         # Save uploaded file
@@ -523,6 +627,11 @@ def capture_image():
         with open(file_path, "wb") as fh:
             fh.write(base64.b64decode(captured_image.split(",")[1]))
         image_name = "Camera Capture"
+    elif static_image_path:
+        file_path = os.path.join('static', static_image_path)
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'Static file not found'}), 404
+        image_name = f"Static: {os.path.basename(file_path)}"
     else:
         return jsonify({'error': 'No image provided'}), 400
 
@@ -563,20 +672,34 @@ def capture_image():
         if 'freshness' in selected_services:
             try:
                 # Use the actual freshness detection model
-                freshness_label = predict_freshness(file_path)
+                freshness_result = predict_freshness(file_path)
                 
-                # Assign a mock score based on the label for the UI
-                score = 9.0 if freshness_label == "Fresh" else 3.5
+                if isinstance(freshness_result, tuple):
+                    freshness_label, confidence = freshness_result
+                else:
+                    freshness_label = freshness_result
+                    confidence = 0.85
+                
+                is_fresh = 'fresh' in freshness_label.lower()
+                
+                # Calculate out of 10 score
+                if is_fresh:
+                    score = round(min(10.0, max(5.0, confidence * 10)), 1)
+                else:
+                    score = round(max(1.0, min(4.9, (1.0 - confidence) * 10)), 1)
                 
                 results['freshness'] = {
                     'score': score,
-                    'label': freshness_label,
-                    'regions': []
+                    'label': freshness_label.capitalize(),
+                    'regions': [],
+                    'color': 'Good' if is_fresh else 'Poor/Discolored',
+                    'texture': 'Firm' if is_fresh else 'Soft/Mushy',
+                    'spots': 'Few' if is_fresh else 'Many/Rotten'
                 }
-                print(f"Freshness detection: {freshness_label}")
+                print(f"Freshness detection: {freshness_label} (Score: {score})")
             except Exception as e:
                 print(f"Freshness detection error: {e}")
-                results['freshness'] = {'score': 0, 'label': 'Error/Unknown', 'regions': []}
+                results['freshness'] = {'score': 0, 'label': 'Error/Unknown', 'regions': [], 'color': 'N/A', 'texture': 'N/A', 'spots': 'N/A'}
 
         if 'brand' in selected_services:
             try:

@@ -49,8 +49,8 @@ def predict_freshness(image_path):
         confidence = top_prediction.get('confidence', 0)
         
         print(f"Roboflow detection: {label} ({confidence:.2f})")
-        return label
+        return label, confidence
         
     except Exception as e:
         print(f"Roboflow inference error: {e}")
-        return "Detection error"
+        return "Detection error", 0.0

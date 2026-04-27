@@ -36,6 +36,9 @@ export interface FreshnessResult {
   score: number;
   label: string;
   regions: Overlay[];
+  color?: string;
+  texture?: string;
+  spots?: string;
 }
 
 export interface BrandMatch {
@@ -69,7 +72,7 @@ export interface AnalysisResponse {
   imageName?: string;
 }
 
-export type InputMethod = 'Camera' | 'Upload' | 'LiveDetection';
+export type InputMethod = 'Camera' | 'Upload' | 'LiveDetection' | 'PreviewStatic';
 
 export type NavigationPage = 'Dashboard' | 'NewTest' | 'History' | 'Settings' | 'Help';
 

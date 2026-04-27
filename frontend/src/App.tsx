@@ -13,7 +13,7 @@ import LiveDetectionModal from './components/LiveDetectionModal';
 import IPWebcamUrlInput from './components/IPWebcamUrlInput';
 import Toast from './components/Toast';
 import type { ToastMessage } from './components/Toast';
-import { getCurrentUser, logout as apiLogout, analyzeImage, getHistory, deleteHistoryItem } from './utils/api';
+import { getCurrentUser, logout as apiLogout, analyzeImage, getHistory, deleteHistoryItem, getStaticAssets } from './utils/api';
 import type { NavigationPage, ServiceType, InputMethod, AnalysisResponse, AnalysisResults, AnalysisStatus, User, HistoryItem } from './types';
 
 function App() {
@@ -42,6 +42,9 @@ function App() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<HistoryItem | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [staticAssets, setStaticAssets] = useState<Record<string, string[]>>({});
+  const [selectedStaticCategory, setSelectedStaticCategory] = useState<string>('');
+  const [selectedStaticFile, setSelectedStaticFile] = useState<string>('');
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
     return saved !== null ? JSON.parse(saved) : false;
@@ -101,6 +104,24 @@ function App() {
 
     checkAuthStatus();
   }, []);
+
+  // Load static assets
+  useEffect(() => {
+    if (inputMethod === 'PreviewStatic') {
+      const loadAssets = async () => {
+        const assets = await getStaticAssets();
+        setStaticAssets(assets);
+        const categories = Object.keys(assets);
+        if (categories.length > 0 && !selectedStaticCategory) {
+          setSelectedStaticCategory(categories[0]);
+          if (assets[categories[0]].length > 0) {
+            setSelectedStaticFile(assets[categories[0]][0]);
+          }
+        }
+      };
+      loadAssets();
+    }
+  }, [inputMethod]);
 
   // Event listeners for Header dropdown actions
   useEffect(() => {
@@ -198,17 +219,24 @@ function App() {
       return;
     }
     
-    if (!selectedFile && !capturedImage) {
+    const isStaticPreview = inputMethod === 'PreviewStatic' && selectedStaticCategory && selectedStaticFile;
+    
+    if (!selectedFile && !capturedImage && !isStaticPreview) {
       showToast('error', 'Please select an image to analyze');
       return;
     }
 
     setIsAnalyzing(true);
     
+    const staticImagePath = inputMethod === 'PreviewStatic' && selectedStaticCategory && selectedStaticFile
+      ? `${selectedStaticCategory}/${selectedStaticFile}`
+      : null;
+    
     try {
       const response = await analyzeImage(
         selectedFile,
         capturedImage,
+        staticImagePath,
         selectedServices,
         () => {}
       );
@@ -400,7 +428,7 @@ function App() {
 
   // Check if analysis can be started
   const canAnalyze = selectedServices.length > 0 && 
-                     (selectedFile || capturedImage) &&
+                     (selectedFile || capturedImage || (inputMethod === 'PreviewStatic' && selectedStaticCategory && selectedStaticFile)) &&
                      !isAnalyzing;
 
   // Show login screen if not authenticated
@@ -589,11 +617,122 @@ function App() {
                     <span>Live Detection</span>
                   </div>
                 </button>
+                
+                <button
+                  onClick={() => setInputMethod('PreviewStatic')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    inputMethod === 'PreviewStatic' 
+                      ? "bg-blue-100 text-blue-700" 
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}>
+                  <div className="flex items-center space-x-2">
+                    <Check className="w-4 h-4" />
+                    <span>Preview Static</span>
+                  </div>
+                </button>
               </div>
             </div>
 
             {/* Content based on selected input method */}
-            {inputMethod === 'LiveDetection' ? (
+            {inputMethod === 'PreviewStatic' ? (
+              <div className="space-y-4">
+                <div className="card">
+                  <h3 className="text-lg font-medium mb-4">Select Static Asset</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Category</label>
+                      <select 
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                        value={selectedStaticCategory}
+                        onChange={(e) => {
+                          setSelectedStaticCategory(e.target.value);
+                          const files = staticAssets[e.target.value] || [];
+                          setSelectedStaticFile(files.length > 0 ? files[0] : '');
+                        }}
+                      >
+                        <option value="">Select Category</option>
+                        {Object.keys(staticAssets).map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">File</label>
+                      <select 
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                        value={selectedStaticFile}
+                        onChange={(e) => setSelectedStaticFile(e.target.value)}
+                        disabled={!selectedStaticCategory}
+                      >
+                        <option value="">Select File</option>
+                        {(staticAssets[selectedStaticCategory] || []).map(file => (
+                          <option key={file} value={file}>{file}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  
+                  {selectedStaticCategory && selectedStaticFile && (
+                    <div className="mt-6 border rounded-lg overflow-hidden flex justify-center bg-gray-50 dark:bg-slate-800 p-2">
+                      {selectedStaticFile.toLowerCase().match(/\.(mp4|webm|ogg|mov|avi|mkv)$/) ? (
+                        <div className="w-full">
+                          <LiveDetectionModal 
+                             onClose={() => {}} 
+                             embedded={true} 
+                             staticVideoUrl={`http://localhost:5001/static/${selectedStaticCategory}/${selectedStaticFile}`} 
+                          />
+                        </div>
+                      ) : (
+                        <img 
+                          src={`http://localhost:5001/static/${selectedStaticCategory}/${selectedStaticFile}`}
+                          alt="Preview"
+                          className="max-h-[300px] object-contain"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                <FeatureSelector
+                  selectedServices={selectedServices}
+                  onToggle={handleServiceToggle}
+                  disabled={isAnalyzing}
+                />
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex space-x-3">
+                    <button
+                      className={`btn-primary ${!canAnalyze ? "opacity-50 cursor-not-allowed" : ""}`}
+                      onClick={handleAnalyze}
+                      disabled={!canAnalyze}>
+                      {isAnalyzing ? (
+                        <div className="flex items-center space-x-2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          <span>Analyzing...</span>
+                        </div>
+                      ) : (
+                        <span>Analyze Image</span>
+                      )}
+                    </button>
+                    
+                    {canAnalyze && (
+                      <button className="btn-secondary" onClick={handleAnalyze}>
+                        Analyze & Save
+                      </button>
+                    )}
+                  </div>
+                  
+                  {selectedServices.length > 0 && (
+                    <div className="text-sm text-gray-600 dark:text-slate-400">
+                      <span>Est. time: ~</span>
+                      <span className="font-medium">
+                        {selectedServices.length * 3}s
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : inputMethod === 'LiveDetection' ? (
               /* Live Detection Interface */
               <div className="space-y-4">
                 {/* IP Webcam Toggle */}

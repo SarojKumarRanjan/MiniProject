@@ -59,9 +59,9 @@ const ResultCard: React.FC<ResultCardProps> = ({ service, status, result, onActi
         if (status === 'Success') {
           return (
             <div className="space-y-3">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-sm text-gray-700 font-mono leading-relaxed">
-                  Sample extracted text: Product Name, Brand, Expiration Date: 2024-12-31, Ingredients: Water, Sugar, Natural Flavors
+              <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-3 max-h-48 overflow-y-auto">
+                <p className="text-sm text-gray-700 dark:text-gray-300 font-mono leading-relaxed whitespace-pre-wrap">
+                  {result?.ocr?.text || 'No text detected.'}
                 </p>
               </div>
               <div className="flex items-center space-x-2">
@@ -103,33 +103,47 @@ const ResultCard: React.FC<ResultCardProps> = ({ service, status, result, onActi
 
       case 'Freshness':
         if (status === 'Success') {
+          const freshness = result?.freshness;
+          const score = freshness?.score || 0;
+          const label = freshness?.label || 'Unknown';
+          const color = freshness?.color || 'N/A';
+          const texture = freshness?.texture || 'N/A';
+          const spots = freshness?.spots || 'N/A';
+          
+          const isFresh = label.toLowerCase().includes('fresh');
+          
           return (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-lg font-semibold text-green-600">Fresh</div>
+                  <div className={`text-lg font-semibold ${isFresh ? 'text-green-600' : 'text-orange-600'}`}>
+                    {label}
+                  </div>
                   <div className="text-sm text-gray-500">Quality Score</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-gray-900">8.7</div>
+                  <div className="text-2xl font-bold text-gray-900">{score.toFixed(1)}</div>
                   <div className="text-sm text-gray-500">/10</div>
                 </div>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
-                <div className="bg-gradient-to-r from-green-400 to-green-600 h-3 rounded-full" style={{ width: '87%' }}></div>
+                <div 
+                  className={`h-3 rounded-full ${isFresh ? 'bg-gradient-to-r from-green-400 to-green-600' : 'bg-gradient-to-r from-orange-400 to-red-600'}`} 
+                  style={{ width: `${score * 10}%` }}
+                ></div>
               </div>
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div className="text-center">
                   <div className="font-medium">Color</div>
-                  <div className="text-green-600">Good</div>
+                  <div className={`${isFresh ? 'text-green-600' : 'text-orange-600'}`}>{color}</div>
                 </div>
                 <div className="text-center">
                   <div className="font-medium">Texture</div>
-                  <div className="text-green-600">Firm</div>
+                  <div className={`${isFresh ? 'text-green-600' : 'text-orange-600'}`}>{texture}</div>
                 </div>
                 <div className="text-center">
                   <div className="font-medium">Spots</div>
-                  <div className="text-yellow-600">Few</div>
+                  <div className={`${isFresh ? 'text-yellow-600' : 'text-red-600'}`}>{spots}</div>
                 </div>
               </div>
             </div>

@@ -10,6 +10,7 @@ from functools import wraps
 
 # Import the actual processing functions
 import random
+from Freshness_detection.model_freshness import predict_freshness
 
 def extract_text(file_path):
     """Extract text from image using OCR with preprocessing"""
@@ -561,14 +562,21 @@ def capture_image():
 
         if 'freshness' in selected_services:
             try:
-                # Mock freshness since the import is commented out
+                # Use the actual freshness detection model
+                freshness_label = predict_freshness(file_path)
+                
+                # Assign a mock score based on the label for the UI
+                score = 9.0 if freshness_label == "Fresh" else 3.5
+                
                 results['freshness'] = {
-                    'score': 8.5,
-                    'label': 'Fresh',
+                    'score': score,
+                    'label': freshness_label,
                     'regions': []
                 }
+                print(f"Freshness detection: {freshness_label}")
             except Exception as e:
-                results['freshness'] = {'score': 0, 'label': 'Unknown', 'regions': []}
+                print(f"Freshness detection error: {e}")
+                results['freshness'] = {'score': 0, 'label': 'Error/Unknown', 'regions': []}
 
         if 'brand' in selected_services:
             try:
